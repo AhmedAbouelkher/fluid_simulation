@@ -25,7 +25,7 @@ typedef enum {
   OBSTACLE_TYPE_CIRCLE,
 } ObstacleType;
 
-ObstacleType obstacleType = OBSTACLE_TYPE_CIRCLE;
+ObstacleType obstacleType = OBSTACLE_TYPE_RECTANGLE;
 
 typedef enum { U_FIELDTYPE, V_FIELDTYPE, S_FIELDTYPE } FieldType;
 
@@ -306,10 +306,10 @@ void advectionVelocity(Grid *grid, float dt, float h) {
     }
   }
 
-  memcpy(grid->u, newTempU, grid->dim * sizeof(float));
-  memcpy(grid->v, newTempV, grid->dim * sizeof(float));
-  free(newTempV);
-  free(newTempU);
+  free(grid->u);
+  free(grid->v);
+  grid->u = newTempU;
+  grid->v = newTempV;
 }
 
 void advectionSmoke(Grid *grid, float dt, float h) {
@@ -331,8 +331,8 @@ void advectionSmoke(Grid *grid, float dt, float h) {
     }
   }
 
-  memcpy(grid->M, newM, grid->dim * sizeof(float));
-  free(newM);
+  free(grid->M);
+  grid->M = newM;
 }
 
 void setObstacle(Grid *grid, Vector2 center, float radius, ObstacleType type) {
@@ -362,8 +362,6 @@ void setObstacle(Grid *grid, Vector2 center, float radius, ObstacleType type) {
     }
     // TODO: Fix rectangle obstacle
   } else if (obstacleType == OBSTACLE_TYPE_RECTANGLE) {
-    float halfWidth = grid->cols / 2.0f;
-    float halfHeight = grid->rows / 2.0f;
     for (size_t i = 1; i < grid->cols - 2; i++) {
       for (size_t j = 1; j < grid->rows - 2; j++) {
         size_t idx = i * grid->rows + j;
@@ -371,10 +369,14 @@ void setObstacle(Grid *grid, Vector2 center, float radius, ObstacleType type) {
 
         float dx = (i + 0.5f) - center.x;
         float dy = (j + 0.5f) - center.y;
-        if (dx > -halfWidth && dx < halfWidth && dy > -halfHeight &&
-            dy < halfHeight) {
+
+        if (dx > -radius && dx < radius && dy > -radius && dy < radius) {
           grid->S[idx] = S_SOLID;
           grid->M[idx] = 1.0f;
+
+          if (fabsf(dx) == radius || fabsf(dy) == radius) {
+            // TODO
+          }
 
           grid->u[idx] = vx;
           grid->u[(i + 1) * grid->rows + j] = vx;
@@ -465,15 +467,11 @@ int main(int argc, char **argv) {
   while (!WindowShouldClose()) {
     float dt = GetFrameTime();
 
-    Vector2 mousePos = GetMousePosition();
-
     if (IsKeyPressed(KEY_C)) {
       obstacleType = OBSTACLE_TYPE_CIRCLE;
-      obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
       setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
     } else if (IsKeyPressed(KEY_R)) {
       obstacleType = OBSTACLE_TYPE_RECTANGLE;
-      obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
       setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
     } else if (IsKeyPressed(KEY_SPACE)) {
       // we want to remove the obstacle
@@ -482,6 +480,7 @@ int main(int argc, char **argv) {
     }
 
     if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+      Vector2 mousePos = GetMousePosition();
       obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
       setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
     }
@@ -501,7 +500,7 @@ int main(int argc, char **argv) {
     advectionSmoke(&grid, dt, h);
 
     BeginDrawing();
-    ClearBackground(BLACK);
+    ClearBackground(RAYWHITE);
 
     float minP = INFINITY;
     float maxP = -INFINITY;
@@ -513,6 +512,9 @@ int main(int argc, char **argv) {
     for (size_t i = 0; i < grid.cols; i++) {
       for (size_t j = 0; j < grid.rows; j++) {
         size_t idx = i * grid.rows + j;
+        // if (grid.S[idx] == S_SOLID) {
+        //   continue;
+        // }
         float p = grid.P[idx];
         float s = grid.M[idx];
         Color color = getSciColor(p, minP, maxP);
@@ -566,19 +568,24 @@ int main(int argc, char **argv) {
 
     Vector2 obstacleScrPos = gridToScreen(grid, obstaclePos.x, obstaclePos.y);
 
-    float obsR = OBS_RADIUS + grid.scale / 4;
-
     switch (obstacleType) {
-    case OBSTACLE_TYPE_CIRCLE:
-      DrawCircle(obstacleScrPos.x, obstacleScrPos.y, obsR * grid.scale,
-                 MAGENTA);
-      DrawCircleLines(obstacleScrPos.x, obstacleScrPos.y, obsR * grid.scale,
-                      WHITE);
+    case OBSTACLE_TYPE_CIRCLE: {
+      float obsR = OBS_RADIUS + grid.scale / 4;
+      float radius = obsR * grid.scale;
+      float x = obstacleScrPos.x;
+      float y = obstacleScrPos.y;
+      DrawCircle(x, y, radius, MAGENTA);
+      DrawCircleLines(x, y, radius, WHITE);
       break;
-    case OBSTACLE_TYPE_RECTANGLE:
-      DrawRectangle(obstacleScrPos.x, obstacleScrPos.y, obsR * grid.scale,
-                    obsR * grid.scale, MAGENTA);
+    }
+    case OBSTACLE_TYPE_RECTANGLE: {
+      float dim = OBS_RADIUS * grid.scale * 2;
+      float x = obstacleScrPos.x - dim / 2;
+      float y = obstacleScrPos.y - dim / 2;
+      DrawRectangle(x, y, dim, dim, MAGENTA);
+      DrawRectangleLines(x, y, dim, dim, WHITE);
       break;
+    }
     default:
       break;
     }
