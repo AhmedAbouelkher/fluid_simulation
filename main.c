@@ -112,7 +112,7 @@ float sampleField(Grid grid, float x, float y, float h, FieldType field) {
   x = fmaxf(h, fmin(x, grid.cols * h));
   y = fmaxf(h, fmin(y, grid.rows * h));
 
-  float dx, dy = 0.f;
+float dx, dy = 0.f;
 
   switch (field) {
   case U_FIELDTYPE:
