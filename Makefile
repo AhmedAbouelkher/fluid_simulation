@@ -16,7 +16,7 @@ run: build
 build-web:
 	mkdir -p $(WEB_BUILD_DIR)
 	emcc -o $(WEB_BUILD_DIR)/fluid_simulation.html main.c -Os -Wall -DPLATFORM_WEB \
-		$(RAYLIB_WEB_FLAGS) -sUSE_GLFW=3 -sASYNCIFY -sFORCE_FILESYSTEM=1 -sMINIFY_HTML=1 \
+		$(RAYLIB_WEB_FLAGS) -sUSE_GLFW=3 -sFORCE_FILESYSTEM=1 -sMINIFY_HTML=1 \
 		--shell-file $(BUILD_WEB_SHELL)
 		
 

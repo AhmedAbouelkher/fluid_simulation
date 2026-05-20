@@ -6,6 +6,10 @@
 
 #include <raylib.h>
 
+#if defined(PLATFORM_WEB)
+#include <emscripten/emscripten.h>
+#endif
+
 #define WINDOW_WIDTH 1000.0
 #define WINDOW_HEIGHT 600.0
 #define GRID_SCALE 5.0
@@ -42,6 +46,12 @@ typedef struct {
   float *P;
   float *M;
 } Grid;
+
+Grid grid = {0};
+Vector2 obstaclePos = {0};
+float gravity = 0;
+// float gravity = -9.81f;
+float relaxation = 1.7f;
 
 void fillArr(float *arr, float val, size_t len) {
   for (size_t i = 0; i < len; i++) {
@@ -112,7 +122,7 @@ float sampleField(Grid grid, float x, float y, float h, FieldType field) {
   x = fmaxf(h, fmin(x, grid.cols * h));
   y = fmaxf(h, fmin(y, grid.rows * h));
 
-float dx, dy = 0.f;
+  float dx, dy = 0.f;
 
   switch (field) {
   case U_FIELDTYPE:
@@ -400,12 +410,12 @@ void setObstacle(Grid *grid, Vector2 center, float radius, ObstacleType type) {
   }
 }
 
+static void UpdateDrawFrame(void); // Update and draw one frame
+
 int main(int argc, char **argv) {
   SetConfigFlags(FLAG_MSAA_4X_HINT);
   InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Fluid Simulation");
-  SetTargetFPS(120);
 
-  Grid grid = {0};
   initGrid(&grid, GRID_SCALE);
 
   /*
@@ -454,166 +464,175 @@ int main(int argc, char **argv) {
     }
   }
 
-  Vector2 obstaclePos = {.x = grid.cols * OBS_INIT_X_OFFSET,
-                         .y = grid.rows * .5f};
+  obstaclePos =
+      (Vector2){.x = grid.cols * OBS_INIT_X_OFFSET, .y = grid.rows * .5f};
   if (obstacleType != OBSTACLE_TYPE_NONE) {
     setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
   }
 
-  float gravity = 0;
-  // float gravity = -9.81f;
-  float relaxation = 1.7f;
+#if defined(PLATFORM_WEB)
+  emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
+#else
+  SetTargetFPS(120); // Set our game to run at 60 frames-per-second
+  //--------------------------------------------------------------------------------------
 
-  while (!WindowShouldClose()) {
-    float dt = GetFrameTime();
-
-    if (IsKeyPressed(KEY_C)) {
-      obstacleType = OBSTACLE_TYPE_CIRCLE;
-      setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
-    } else if (IsKeyPressed(KEY_R)) {
-      obstacleType = OBSTACLE_TYPE_RECTANGLE;
-      setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
-    } else if (IsKeyPressed(KEY_SPACE)) {
-      // we want to remove the obstacle
-      obstacleType = OBSTACLE_TYPE_NONE;
-      setObstacle(&grid, obstaclePos, 0.0f, obstacleType);
-    }
-
-    if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-      Vector2 mousePos = GetMousePosition();
-      obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
-      setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
-    }
-
-    float h = grid.scale;
-
-    // Integrate
-    integrate(&grid, dt, gravity);
-    // Solve Incompressibility (skip boundaries)
-    solveIncompressibility(&grid, dt, h, relaxation);
-    // Extrapolate
-    extrapolate(&grid);
-    /// Advection
-    advectionVelocity(&grid, dt, h);
-
-    /// ADVECTION OF SMOKE
-    advectionSmoke(&grid, dt, h);
-
-    BeginDrawing();
-    ClearBackground(RAYWHITE);
-
-    float minP = INFINITY;
-    float maxP = -INFINITY;
-    for (size_t i = 0; i < grid.dim; i++) {
-      minP = fminf(minP, grid.P[i]);
-      maxP = fmaxf(maxP, grid.P[i]);
-    }
-
-    for (size_t i = 0; i < grid.cols; i++) {
-      for (size_t j = 0; j < grid.rows; j++) {
-        size_t idx = i * grid.rows + j;
-        // if (grid.S[idx] == S_SOLID) {
-        //   continue;
-        // }
-        float p = grid.P[idx];
-        float s = grid.M[idx];
-        Color color = getSciColor(p, minP, maxP);
-
-        color.r = fmaxf(0, color.r - 255 * s);
-        color.g = fmaxf(0, color.g - 255 * s);
-        color.b = fmaxf(0, color.b - 255 * s);
-        color.a = 255;
-
-        Vector2 pos = gridToScreen(grid, i, j);
-        DrawRectangle(pos.x, pos.y, grid.scale, grid.scale, color);
-
-        // draw the obstacle
-      }
-    }
-
-    /*
-    float minSpeed = INFINITY;
-    float maxSpeed = -INFINITY;
-    for (size_t i = 0; i < grid.dim; i++) {
-      float u = grid.u[i];
-      float v = grid.v[i];
-      float speed = sqrtf(u * u + v * v);
-      minSpeed = fminf(minSpeed, speed);
-      maxSpeed = fmaxf(maxSpeed, speed);
-    }
-
-    for (size_t i = 0; i < grid.cols; i++) {
-      for (size_t j = 0; j < grid.rows; j++) {
-        size_t idx = i * grid.rows + j;
-        float s = grid.M[idx];
-        // get the velocity at the center of the cell
-        float u = grid.u[idx];
-        float v = grid.v[idx];
-        float speed = sqrtf(u * u + v * v);
-        Color c = getSciColor(speed, minSpeed, maxSpeed);
-        c.a = 255 * (1.0f - s);
-        // printf("%.2f (%d, %d, %d)\n", speed, c.r, c.g, c.b);
-
-        // Color color = {
-        //     .r = 255 * (1.0f - s),
-        //     .g = 255 * (1.0f - s),
-        //     .b = 255 * (1.0f - s),
-        //     .a = 255,
-        // };
-        Vector2 pos = gridToScreen(grid, i, j);
-        DrawRectangle(pos.x, pos.y, grid.scale, grid.scale, c);
-      }
-    }
-    */
-
-    Vector2 obstacleScrPos = gridToScreen(grid, obstaclePos.x, obstaclePos.y);
-
-    switch (obstacleType) {
-    case OBSTACLE_TYPE_CIRCLE: {
-      float obsR = OBS_RADIUS + grid.scale / 4;
-      float radius = obsR * grid.scale;
-      float x = obstacleScrPos.x;
-      float y = obstacleScrPos.y;
-      DrawCircle(x, y, radius, MAGENTA);
-      DrawCircleLines(x, y, radius, WHITE);
-      break;
-    }
-    case OBSTACLE_TYPE_RECTANGLE: {
-      float dim = OBS_RADIUS * grid.scale * 2;
-      float x = obstacleScrPos.x - dim / 2;
-      float y = obstacleScrPos.y - dim / 2;
-      DrawRectangle(x, y, dim, dim, MAGENTA);
-      DrawRectangleLines(x, y, dim, dim, WHITE);
-      break;
-    }
-    default:
-      break;
-    }
-
-    // get the fps and display it in the top left corner
-    DrawRectangle(0, 0, WINDOW_WIDTH, 25, DARKGRAY);
-    float fps = GetFPS();
-    float frameTime = dt * 1000.0f;
-    const char *texts[4] = {
-        TextFormat("GRID: %zux%zu", grid.cols, grid.rows),
-        TextFormat("Gravity: %.2f/Relax: %.2f", gravity, relaxation),
-        TextFormat("FPS: %.0f (%.2fms)", fps, frameTime),
-    };
-    const float textSize = 15;
-    float currentOffset = 5;
-    for (size_t i = 0; i < 4; i++) {
-      const char *text = texts[i];
-      float mTextWidth = MeasureText(text, textSize);
-      // side by side in the same line, (margin of Xpx between them)
-      DrawText(text, currentOffset, 5, textSize, WHITE);
-      currentOffset += mTextWidth + 20;
-    }
-
-    EndDrawing();
+  // Main game loop
+  while (!WindowShouldClose()) // Detect window close button or ESC key
+  {
+    UpdateDrawFrame();
   }
+#endif
 
   freeGrid(&grid);
   CloseWindow();
 
   return 0;
+}
+
+static void UpdateDrawFrame(void) {
+  float dt = GetFrameTime();
+
+  if (IsKeyPressed(KEY_C)) {
+    obstacleType = OBSTACLE_TYPE_CIRCLE;
+    setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
+  } else if (IsKeyPressed(KEY_R)) {
+    obstacleType = OBSTACLE_TYPE_RECTANGLE;
+    setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
+  } else if (IsKeyPressed(KEY_SPACE)) {
+    // we want to remove the obstacle
+    obstacleType = OBSTACLE_TYPE_NONE;
+    setObstacle(&grid, obstaclePos, 0.0f, obstacleType);
+  }
+
+  if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
+    Vector2 mousePos = GetMousePosition();
+    obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
+    setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
+  }
+
+  float h = grid.scale;
+
+  // Integrate
+  integrate(&grid, dt, gravity);
+  // Solve Incompressibility (skip boundaries)
+  solveIncompressibility(&grid, dt, h, relaxation);
+  // Extrapolate
+  extrapolate(&grid);
+  /// Advection
+  advectionVelocity(&grid, dt, h);
+
+  /// ADVECTION OF SMOKE
+  advectionSmoke(&grid, dt, h);
+
+  BeginDrawing();
+  ClearBackground(RAYWHITE);
+
+  float minP = INFINITY;
+  float maxP = -INFINITY;
+  for (size_t i = 0; i < grid.dim; i++) {
+    minP = fminf(minP, grid.P[i]);
+    maxP = fmaxf(maxP, grid.P[i]);
+  }
+
+  for (size_t i = 0; i < grid.cols; i++) {
+    for (size_t j = 0; j < grid.rows; j++) {
+      size_t idx = i * grid.rows + j;
+      // if (grid.S[idx] == S_SOLID) {
+      //   continue;
+      // }
+      float p = grid.P[idx];
+      float s = grid.M[idx];
+      Color color = getSciColor(p, minP, maxP);
+
+      color.r = fmaxf(0, color.r - 255 * s);
+      color.g = fmaxf(0, color.g - 255 * s);
+      color.b = fmaxf(0, color.b - 255 * s);
+      color.a = 255;
+
+      Vector2 pos = gridToScreen(grid, i, j);
+      DrawRectangle(pos.x, pos.y, grid.scale, grid.scale, color);
+
+      // draw the obstacle
+    }
+  }
+
+  /*
+  float minSpeed = INFINITY;
+  float maxSpeed = -INFINITY;
+  for (size_t i = 0; i < grid.dim; i++) {
+    float u = grid.u[i];
+    float v = grid.v[i];
+    float speed = sqrtf(u * u + v * v);
+    minSpeed = fminf(minSpeed, speed);
+    maxSpeed = fmaxf(maxSpeed, speed);
+  }
+
+  for (size_t i = 0; i < grid.cols; i++) {
+    for (size_t j = 0; j < grid.rows; j++) {
+      size_t idx = i * grid.rows + j;
+      float s = grid.M[idx];
+      // get the velocity at the center of the cell
+      float u = grid.u[idx];
+      float v = grid.v[idx];
+      float speed = sqrtf(u * u + v * v);
+      Color c = getSciColor(speed, minSpeed, maxSpeed);
+      c.a = 255 * (1.0f - s);
+      // printf("%.2f (%d, %d, %d)\n", speed, c.r, c.g, c.b);
+
+      // Color color = {
+      //     .r = 255 * (1.0f - s),
+      //     .g = 255 * (1.0f - s),
+      //     .b = 255 * (1.0f - s),
+      //     .a = 255,
+      // };
+      Vector2 pos = gridToScreen(grid, i, j);
+      DrawRectangle(pos.x, pos.y, grid.scale, grid.scale, c);
+    }
+  }
+  */
+
+  Vector2 obstacleScrPos = gridToScreen(grid, obstaclePos.x, obstaclePos.y);
+
+  switch (obstacleType) {
+  case OBSTACLE_TYPE_CIRCLE: {
+    float obsR = OBS_RADIUS + grid.scale / 4;
+    float radius = obsR * grid.scale;
+    float x = obstacleScrPos.x;
+    float y = obstacleScrPos.y;
+    DrawCircle(x, y, radius, MAGENTA);
+    DrawCircleLines(x, y, radius, WHITE);
+    break;
+  }
+  case OBSTACLE_TYPE_RECTANGLE: {
+    float dim = OBS_RADIUS * grid.scale * 2;
+    float x = obstacleScrPos.x - dim / 2;
+    float y = obstacleScrPos.y - dim / 2;
+    DrawRectangle(x, y, dim, dim, MAGENTA);
+    DrawRectangleLines(x, y, dim, dim, WHITE);
+    break;
+  }
+  default:
+    break;
+  }
+
+  // get the fps and display it in the top left corner
+  DrawRectangle(0, 0, WINDOW_WIDTH, 25, DARKGRAY);
+  float fps = GetFPS();
+  float frameTime = dt * 1000.0f;
+  const char *texts[4] = {
+      TextFormat("GRID: %zux%zu", grid.cols, grid.rows),
+      TextFormat("Gravity: %.2f/Relax: %.2f", gravity, relaxation),
+      TextFormat("FPS: %.0f (%.2fms)", fps, frameTime),
+  };
+  const float textSize = 20;
+  float currentOffset = 5;
+  for (size_t i = 0; i < 4; i++) {
+    const char *text = texts[i];
+    float mTextWidth = MeasureText(text, textSize);
+    // side by side in the same line, (margin of Xpx between them)
+    DrawText(text, currentOffset, 5, textSize, WHITE);
+    currentOffset += mTextWidth + 20;
+  }
+
+  EndDrawing();
 }
