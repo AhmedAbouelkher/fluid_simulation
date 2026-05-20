@@ -15,7 +15,7 @@ run: build
 
 build-web:
 	mkdir -p $(WEB_BUILD_DIR)
-	emcc -o $(WEB_BUILD_DIR)/snellslens.html main.c -Os -Wall -DPLATFORM_WEB \
+	emcc -o $(WEB_BUILD_DIR)/fluid_simulation.html main.c -Os -Wall -DPLATFORM_WEB \
 		$(RAYLIB_WEB_FLAGS) -sUSE_GLFW=3 -sASYNCIFY -sFORCE_FILESYSTEM=1 -sMINIFY_HTML=0 \
 		--shell-file $(BUILD_WEB_SHELL)
 		
@@ -23,5 +23,5 @@ build-web:
 build-web-deploy: build-web
 	rm -rf ./docs
 	cp -r $(WEB_BUILD_DIR) ./docs
-	cp $(WEB_BUILD_DIR)/snellslens.html ./docs/index.html
-	rm -rf ./docs/snellslens.html
+	cp $(WEB_BUILD_DIR)/fluid_simulation.html ./docs/index.html
+	rm -rf ./docs/fluid_simulation.html
