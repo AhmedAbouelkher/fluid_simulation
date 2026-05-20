@@ -2,6 +2,8 @@
 
 A passion project implementing an Eulerian fluid solver in C, inspired by my studies in physics and computer science. This is an in-progress simulator that captures fluid motion, incompressibility, and smoke advection.
 
+## [TRY THE DEMO IN YOUR BROWSER](https://ahmedabouelkher.github.io/fluid_simulation/)
+
 https://github.com/user-attachments/assets/6f79c0ba-63e2-459d-a65f-22737c011f2d
 
 ## Overview
