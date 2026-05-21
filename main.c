@@ -6,11 +6,14 @@
 
 #include <raylib.h>
 
+#define RAYGUI_IMPLEMENTATION
+#include "./libs/raygui/src/raygui.h"
+
 #if defined(PLATFORM_WEB)
 #include <emscripten/emscripten.h>
 #endif
 
-#define WINDOW_WIDTH 1000.0
+#define WINDOW_WIDTH 800.0
 #define WINDOW_HEIGHT 600.0
 #define GRID_SCALE 5.0
 
@@ -32,6 +35,21 @@ typedef enum {
 ObstacleType obstacleType = OBSTACLE_TYPE_RECTANGLE;
 
 typedef enum { U_FIELDTYPE, V_FIELDTYPE, S_FIELDTYPE } FieldType;
+
+typedef struct {
+  ObstacleType type;
+  const char *text;
+  Rectangle bounds;
+} GButton;
+
+Rectangle copyRect(Rectangle rect) {
+  return (Rectangle){
+      .x = rect.x,
+      .y = rect.y,
+      .width = rect.width,
+      .height = rect.height,
+  };
+}
 
 typedef struct {
   size_t rows;
@@ -470,6 +488,8 @@ int main(int argc, char **argv) {
     setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
   }
 
+  GuiSetStyle(DEFAULT, TEXT_SIZE, 20);
+
 #if defined(PLATFORM_WEB)
   emscripten_set_main_loop(UpdateDrawFrame, 0, 1);
 #else
@@ -502,12 +522,6 @@ static void UpdateDrawFrame(void) {
     // we want to remove the obstacle
     obstacleType = OBSTACLE_TYPE_NONE;
     setObstacle(&grid, obstaclePos, 0.0f, obstacleType);
-  }
-
-  if (IsMouseButtonDown(MOUSE_LEFT_BUTTON)) {
-    Vector2 mousePos = GetMousePosition();
-    obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
-    setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
   }
 
   float h = grid.scale;
@@ -616,7 +630,7 @@ static void UpdateDrawFrame(void) {
   }
 
   // get the fps and display it in the top left corner
-  DrawRectangle(0, 0, WINDOW_WIDTH, 25, DARKGRAY);
+  DrawRectangle(0, 0, WINDOW_WIDTH, 30, DARKGRAY);
   float fps = GetFPS();
   float frameTime = dt * 1000.0f;
   const char *texts[4] = {
@@ -624,7 +638,7 @@ static void UpdateDrawFrame(void) {
       TextFormat("Gravity: %.2f/Relax: %.2f", gravity, relaxation),
       TextFormat("FPS: %.0f (%.2fms)", fps, frameTime),
   };
-  const float textSize = 20;
+  const float textSize = 25;
   float currentOffset = 5;
   for (size_t i = 0; i < 4; i++) {
     const char *text = texts[i];
@@ -632,6 +646,60 @@ static void UpdateDrawFrame(void) {
     // side by side in the same line, (margin of Xpx between them)
     DrawText(text, currentOffset, 5, textSize, WHITE);
     currentOffset += mTextWidth + 20;
+  }
+
+  bool mouseOverBtn = false;
+#if defined(PLATFORM_WEB)
+  float height = (float)GetScreenHeight();
+  const float btnHeight = 30, btnWidth = 125, padding = btnWidth + 15;
+  Rectangle webButton = {
+      .x = 15,
+      .y = height - btnHeight - 20,
+      .width = btnWidth,
+      .height = btnHeight,
+  };
+  GButton buttons[3] = {
+      {.text = "Circle", .type = OBSTACLE_TYPE_CIRCLE},
+      {.text = "Rectangle", .type = OBSTACLE_TYPE_RECTANGLE},
+      {.text = "No Shape", .type = OBSTACLE_TYPE_NONE},
+  };
+  for (size_t i = 0; i < 3; i++) {
+    Rectangle rect = copyRect(webButton);
+    rect.x += i * padding;
+    buttons[i].bounds = rect;
+    if (GuiButton(buttons[i].bounds, buttons[i].text)) {
+      switch (buttons[i].type) {
+      case OBSTACLE_TYPE_CIRCLE:
+        obstacleType = OBSTACLE_TYPE_CIRCLE;
+        setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
+        break;
+      case OBSTACLE_TYPE_RECTANGLE:
+        obstacleType = OBSTACLE_TYPE_RECTANGLE;
+        setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
+        break;
+      case OBSTACLE_TYPE_NONE:
+        obstacleType = OBSTACLE_TYPE_NONE;
+        setObstacle(&grid, obstaclePos, 0.0f, obstacleType);
+        break;
+      default:
+        break;
+      }
+    }
+  }
+  // check if there is any collision between the buttons and the mouse
+
+  for (size_t i = 0; i < 3; i++) {
+    if (CheckCollisionPointRec(GetMousePosition(), buttons[i].bounds)) {
+      mouseOverBtn = true;
+      break;
+    }
+  }
+#endif
+
+  if (IsMouseButtonDown(MOUSE_LEFT_BUTTON) && !mouseOverBtn) {
+    Vector2 mousePos = GetMousePosition();
+    obstaclePos = screenToGrid(grid, mousePos.x, mousePos.y);
+    setObstacle(&grid, obstaclePos, OBS_RADIUS, obstacleType);
   }
 
   EndDrawing();
