@@ -651,7 +651,7 @@ static void UpdateDrawFrame(void) {
   bool mouseOverBtn = false;
 #if defined(PLATFORM_WEB)
   float height = (float)GetScreenHeight();
-  const float btnHeight = 30, btnWidth = 125, padding = btnWidth + 15;
+  const float btnHeight = 50, btnWidth = 125, padding = btnWidth + 15;
   Rectangle webButton = {
       .x = 15,
       .y = height - btnHeight - 20,
